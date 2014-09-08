@@ -5,7 +5,9 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 
 import helper.UserInfo;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -191,6 +193,56 @@ public  class ChatRoom extends UntypedActor {
         }
     }
     
+    
+    public static void deleteAllUserRecords() {
+		Jedis jedis = null;
+		try {
+		    jedis = play.Play.application().plugin(RedisPlugin.class).jedisPool().getResource();
+
+		    if (jedis == null) {
+		      throw new Exception("Unable to get jedis resource!");
+		    }
+		    Set<String> keys = jedis.keys(MEMBERS);
+		    for (String key : keys) {
+		        jedis.del(key);
+		    } 
+		  } catch (Exception exc) { 
+
+		    throw new RuntimeException("Unable to delete that pattern!");
+		  } finally {
+		    if (jedis != null) {
+		    	play.Play.application().plugin(RedisPlugin.class).jedisPool().returnResource(jedis);
+		    }
+		  }
+	}
+
+	public static List<UserInfo> getUserInfo() {
+		Jedis jedis = null;
+		Set<String> keys = null;
+		List<UserInfo> userLst = null;
+		try {
+		    jedis = play.Play.application().plugin(RedisPlugin.class).jedisPool().getResource();
+
+		    if (jedis == null) {
+		      throw new Exception("Unable to get jedis resource!");
+		    }
+		    userLst = new ArrayList<UserInfo>();
+		    for(String str:jedis.keys("MEMBERS:*") ){
+		    	userLst.add(new UserInfo(str));
+		    }		   
+		    //System.out.println("User Infoooooo in the chat room  "+userLst.size());
+		     
+		  } catch (Exception exc) { 
+
+		    throw new RuntimeException("Unable to get that pattern!");
+		  } finally {
+		    if (jedis != null) {
+		    	play.Play.application().plugin(RedisPlugin.class).jedisPool().returnResource(jedis);
+		    }
+		  }
+		  return userLst;
+	}
+    
     // -- Messages
     
     public static class Join {
@@ -312,48 +364,6 @@ public  class ChatRoom extends UntypedActor {
         }
     }
 
-	public static void deleteAllUserRecords() {
-		Jedis jedis = null;
-		try {
-		    jedis = play.Play.application().plugin(RedisPlugin.class).jedisPool().getResource();
-
-		    if (jedis == null) {
-		      throw new Exception("Unable to get jedis resource!");
-		    }
-		    Set<String> keys = jedis.keys(MEMBERS);
-		    for (String key : keys) {
-		        jedis.del(key);
-		    } 
-		  } catch (Exception exc) { 
-
-		    throw new RuntimeException("Unable to delete that pattern!");
-		  } finally {
-		    if (jedis != null) {
-		    	play.Play.application().plugin(RedisPlugin.class).jedisPool().returnResource(jedis);
-		    }
-		  }
-	}
-
-	public static Set<String> getUserInfo() {
-		Jedis jedis = null;
-		Set<String> keys = null;
-		try {
-		    jedis = play.Play.application().plugin(RedisPlugin.class).jedisPool().getResource();
-
-		    if (jedis == null) {
-		      throw new Exception("Unable to get jedis resource!");
-		    }
-		    keys = jedis.keys(MEMBERS);
-		     
-		  } catch (Exception exc) { 
-
-		    throw new RuntimeException("Unable to delete that pattern!");
-		  } finally {
-		    if (jedis != null) {
-		    	play.Play.application().plugin(RedisPlugin.class).jedisPool().returnResource(jedis);
-		    }
-		  }
-		  return keys;
-	}
+	
     
 }

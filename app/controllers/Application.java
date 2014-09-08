@@ -29,9 +29,9 @@ public class Application extends Controller {
     		Integer val = Integer.parseInt(play.Play.application().configuration().getString("deleteStat"));
     		if(val==1){
     			ChatRoom.deleteAllUserRecords();
-    			System.out.println("I m here for inside fst time!!!!");
+    			//System.out.println("I m here for inside fst time!!!!");
     		}
-    		System.out.println("I m here for fst time!!!!"+val);
+    		//System.out.println("I m here for fst time!!!!"+val);
     		status = true;
     	
     	}
@@ -79,14 +79,15 @@ public class Application extends Controller {
      */
     
     public static Result getUserInfo(){
-    	Set<String> userInfo = null;
+    	List<UserInfo> userLst = null;
     	try{
-	    	userInfo = ChatRoom.getUserInfo();		
-	    	return ok(toJson(userInfo));
+    		userLst = ChatRoom.getUserInfo();
+    		System.out.println("User Infoooooo  "+userLst.size());
+	    	return ok(toJson(userLst));
     	}catch(Exception ex){
     		ex.printStackTrace();
     	}
-    	return ok(toJson(userInfo));
+    	return ok(toJson(userLst));
     }
   
 }
