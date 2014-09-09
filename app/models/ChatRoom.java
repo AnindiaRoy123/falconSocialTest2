@@ -44,6 +44,7 @@ public  class ChatRoom extends UntypedActor {
     static {
     	//add the robot
     	new Robot(defaultRoom);
+    	//clearConnPool();
     	
     	//subscribe to the message channel
     	Akka.system().scheduler().scheduleOnce(
@@ -51,6 +52,7 @@ public  class ChatRoom extends UntypedActor {
     	        new Runnable() {
     	            public void run() {
     	            	Jedis j = play.Play.application().plugin(RedisPlugin.class).jedisPool().getResource();
+    	            	//Jedis j = getConnection();
     	            	j.subscribe(new MyListener(), CHANNEL);
     	            }
     	        },
@@ -63,24 +65,28 @@ public  class ChatRoom extends UntypedActor {
      */
     public static void join(final String username, WebSocket.In<JsonNode> in, WebSocket.Out<JsonNode> out) throws Exception{
         System.out.println("joining: " + username);
+       // System.out.println("I m on join method ''''''''");
         // Join the default room. Timeout should be longer than the Redis connect timeout (2 seconds)
         String result = (String)Await.result(ask(defaultRoom,new Join(username, out), 3000), Duration.create(3, SECONDS));
         
         if("OK".equals(result)) {
-            
+        	//System.out.println("I m on join method and result is====="+result);
             // For each event received on the socket,
             in.onMessage(new Callback<JsonNode>() {
                public void invoke(JsonNode event) {
                    
             	   Talk talk = new Talk(username, event.get("text").asText());
             	   
-            	   Jedis j = play.Play.application().plugin(RedisPlugin.class).jedisPool().getResource();
+            	//  Jedis j = play.Play.application().plugin(RedisPlugin.class).jedisPool().getResource();
+            	  Jedis j = getConnection();
             	   try {
             		   //All messages are pushed through the pub/sub channel
             		   j.publish(ChatRoom.CHANNEL, Json.stringify(Json.toJson(talk)));
             	   } finally {
-                 	  play.Play.application().plugin(RedisPlugin.class).jedisPool().returnResource(j);            		   
+                 	 //play.Play.application().plugin(RedisPlugin.class).jedisPool().returnResource(j);            		   
+            		//closeConnection(j);
             	   }
+            	   
             	   
                } 
             });
@@ -88,7 +94,7 @@ public  class ChatRoom extends UntypedActor {
             // When the socket is closed.
             in.onClose(new Callback0() {
                public void invoke() {
-                   
+            	   //System.out.println("I m on join method and about to call quit=====");
                    // Send a Quit message to the room.
                    defaultRoom.tell(new Quit(username), null);
                    
@@ -96,6 +102,7 @@ public  class ChatRoom extends UntypedActor {
             });
             
         } else {
+        	//System.out.println("I m on error else=====");
             
             // Cannot connect, create a Json error.
             ObjectNode error = Json.newObject();
@@ -108,7 +115,15 @@ public  class ChatRoom extends UntypedActor {
         
     }
     
-    public static void remoteMessage(Object message) {
+    private static void clearConnPool() {
+		if(connPool !=null && connPool.size()>0){
+			Jedis jedis = (Jedis) connPool.get("Jedis");
+			play.Play.application().plugin(RedisPlugin.class).jedisPool().returnResource(jedis);
+			connPool.clear();
+		}		
+	}
+
+	public static void remoteMessage(Object message) {
     	defaultRoom.tell(message, null);
     }
     
@@ -116,11 +131,13 @@ public  class ChatRoom extends UntypedActor {
     Map<String, WebSocket.Out<JsonNode>> members = new HashMap<String, WebSocket.Out<JsonNode>>();
     
     public void onReceive(Object message) throws Exception {
- 
- 	   Jedis j = play.Play.application().plugin(RedisPlugin.class).jedisPool().getResource();
-    	
-        try {        	
+    	 System.out.println("I m on onReceive method ;;;;;");
+    	//Jedis j = play.Play.application().plugin(RedisPlugin.class).jedisPool().getResource();
+    	Jedis j = null;
+        try {  
+        	j = getConnection();
         	if(message instanceof Join) {
+        		//System.out.println("I m instanceof Join =====");
         		// Received a Join message
         		Join join = (Join)message;
         		// Check if this username is free.
@@ -138,6 +155,7 @@ public  class ChatRoom extends UntypedActor {
         		}
         		
         	} else if(message instanceof Quit)  {
+        		//System.out.println("I m instanceof Quit =====");
         		// Received a Quit message
         		Quit quit = (Quit)message;
         		//Remove the member from this node and the global roster
@@ -146,16 +164,20 @@ public  class ChatRoom extends UntypedActor {
         		
         		//Publish the quit notification to all nodes
         		RosterNotification rosterNotify = new RosterNotification(quit.username, "quit");
+        		//closeConnection();
         		j.publish(ChatRoom.CHANNEL, Json.stringify(Json.toJson(rosterNotify)));
         	} else if(message instanceof RosterNotification) {
+        		//System.out.println("I m instanceof RosterNotification =====");
         		//Received a roster notification
         		RosterNotification rosterNotify = (RosterNotification) message;
         		if("join".equals(rosterNotify.direction)) {
         			notifyAll("join", rosterNotify.username, "has entered the room");
         		} else if("quit".equals(rosterNotify.direction)) {
         			notifyAll("quit", rosterNotify.username, "has left the room");
+        			
         		}
         	} else if(message instanceof Talk)  {
+        		//System.out.println("I m instanceof Talk =====");
         		// Received a Talk message
         		Talk talk = (Talk)message;
         		notifyAll("talk", talk.username, talk.text);
@@ -164,7 +186,9 @@ public  class ChatRoom extends UntypedActor {
         		unhandled(message);
         	}
         } finally {
-        	play.Play.application().plugin(RedisPlugin.class).jedisPool().returnResource(j);            		   
+        	//play.Play.application().plugin(RedisPlugin.class).sedisPool().
+        	// play.Play.application().plugin(RedisPlugin.class).jedisPool().returnResource(j); 
+        	//closeConnection(j);
         }  
     }
     
@@ -180,13 +204,14 @@ public  class ChatRoom extends UntypedActor {
             ArrayNode m = event.putArray("members");
             
             //Go to Redis to read the full roster of members. Push it down with the message.
-            Jedis j = play.Play.application().plugin(RedisPlugin.class).jedisPool().getResource();
+           // Jedis j = play.Play.application().plugin(RedisPlugin.class).jedisPool().getResource();
+           Jedis j= getConnection();
             try {
             	for(String u: j.smembers(MEMBERS)) {
             		m.add(u);
             	}
             } finally {
-            	play.Play.application().plugin(RedisPlugin.class).jedisPool().returnResource(j);            		   
+            	//play.Play.application().plugin(RedisPlugin.class).jedisPool().returnResource(j);            		   
             }
             
             channel.write(event);
@@ -197,8 +222,8 @@ public  class ChatRoom extends UntypedActor {
     public static void deleteAllUserRecords() {
 		Jedis jedis = null;
 		try {
-		    jedis = play.Play.application().plugin(RedisPlugin.class).jedisPool().getResource();
-
+		    //jedis = play.Play.application().plugin(RedisPlugin.class).jedisPool().getResource();
+			jedis = getConnection();
 		    if (jedis == null) {
 		      throw new Exception("Unable to get jedis resource!");
 		    }
@@ -211,7 +236,8 @@ public  class ChatRoom extends UntypedActor {
 		    throw new RuntimeException("Unable to delete that pattern!");
 		  } finally {
 		    if (jedis != null) {
-		    	play.Play.application().plugin(RedisPlugin.class).jedisPool().returnResource(jedis);
+		    	//play.Play.application().plugin(RedisPlugin.class).jedisPool().returnResource(jedis);
+		    	//closeConnection(jedis);
 		    }
 		  }
 	}
@@ -221,8 +247,8 @@ public  class ChatRoom extends UntypedActor {
 		Set<String> keys = null;
 		List<UserInfo> userLst = null;
 		try {
-		    jedis = play.Play.application().plugin(RedisPlugin.class).jedisPool().getResource();
-
+		    //jedis = play.Play.application().plugin(RedisPlugin.class).jedisPool().getResource();
+			jedis = getConnection();
 		    if (jedis == null) {
 		      throw new Exception("Unable to get jedis resource!");
 		    }
@@ -237,11 +263,42 @@ public  class ChatRoom extends UntypedActor {
 		    throw new RuntimeException("Unable to get that pattern!");
 		  } finally {
 		    if (jedis != null) {
-		    	play.Play.application().plugin(RedisPlugin.class).jedisPool().returnResource(jedis);
+		    	//play.Play.application().plugin(RedisPlugin.class).jedisPool().returnResource(jedis);
 		    }
 		  }
 		  return userLst;
 	}
+	
+	private static Map<String, Object> connPool = new HashMap<String, Object>();
+	
+	public static Jedis getConnection(){
+		Jedis jedis = null;
+		System.out.println("i m in getConnection method");
+		if(connPool.get("Jedis")!= null){
+			jedis = (Jedis) connPool.get("Jedis");
+			System.out.println("Jedis not null!!!!!");
+		}else{		
+			try {
+			    jedis = play.Play.application().plugin(RedisPlugin.class).jedisPool().getResource();
+		    	System.out.println("Jedis null");
+			    connPool.put("Jedis", jedis);
+			     
+			  } catch (Exception exc) { 
+	
+			    throw new RuntimeException("Unable to get that pattern!");
+			  }
+		}
+		  return jedis;		
+	}
+	
+	public static void closeConnection(Jedis jedis){
+		//Jedis jedis = getConnection();
+		if (jedis != null) {
+	    	play.Play.application().plugin(RedisPlugin.class).jedisPool().returnResource(jedis);
+	    }
+  }
+		
+	
     
     // -- Messages
     
@@ -327,9 +384,12 @@ public  class ChatRoom extends UntypedActor {
 		@Override
         public void onMessage(String channel, String messageBody) {
 			//Process messages from the pub/sub channel
+			
 	    	JsonNode parsedMessage = Json.parse(messageBody);
 	    	Object message = null;
 	    	String messageType = parsedMessage.get("type").asText();
+	    	//System.out.println("I m on onMessage method ;;;;;"+ channel);
+	    	//System.out.println("I m on onMessage method ;;;;;"+ messageBody);
 	    	if("talk".equals(messageType)) {	    		
 	    		message = new Talk(
 	    				parsedMessage.get("username").asText(), 
